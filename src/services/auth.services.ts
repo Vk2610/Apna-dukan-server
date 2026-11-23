@@ -9,7 +9,13 @@ import {
   findRefreshTokenByHash,
   rotateRefreshToken,
   revokeRefreshToken,
+  createVerificationToken,
+  findVerificationTokenByHash,
+  findLatestVerificationTokenByUserId,
+  deleteVerificationTokensByUserId,
+  verifyUserEmail,
 } from "../dao/auth.dao.js";
+import { sendVerificationEmail } from "./email.services.js";
 
 // Registration input
 interface RegisterInput {
@@ -58,6 +64,21 @@ const getRefreshTokenExpiry = () => {
   );
 };
 
+// Generate cryptographically secure verification token
+const generateVerificationToken = () => {
+  return randomBytes(32).toString("hex");
+};
+
+// Hash verification token using SHA-256
+const hashVerificationToken = (token: string) => {
+  return createHash("sha256").update(token).digest("hex");
+};
+
+// Calculate verification token expiry (15 minutes)
+const getVerificationTokenExpiry = () => {
+  return new Date(Date.now() + 15 * 60 * 1000);
+};
+
 // REGISTER USER
 export const registerUser = async (input: RegisterInput) => {
   const normalizedEmail = input.email.trim().toLowerCase();
@@ -78,7 +99,42 @@ export const registerUser = async (input: RegisterInput) => {
     passwordHash,
   });
 
-  return user;
+  // Generate cryptographically secure verification token
+  const rawToken = generateVerificationToken();
+  const tokenHash = hashVerificationToken(rawToken);
+  const expiresAt = getVerificationTokenExpiry();
+
+  // Store only its SHA-256 hash in database
+  await createVerificationToken({
+    userId: user.id,
+    tokenHash,
+    expiresAt,
+  });
+
+  // Construct verification link
+  const baseUrl =
+    process.env.APP_URL || process.env.API_BASE_URL || "http://localhost:5000";
+  const verificationUrl = `${baseUrl}/api/auth/verify-email?token=${rawToken}`;
+
+  let emailSent = true;
+  try {
+    await sendVerificationEmail({
+      to: user.email,
+      name: user.name,
+      verificationUrl,
+    });
+  } catch (emailError) {
+    console.error(
+      "Verification email sending failed during registration:",
+      emailError
+    );
+    emailSent = false;
+  }
+
+  return {
+    user,
+    emailSent,
+  };
 };
 
 // LOGIN USER
@@ -196,3 +252,87 @@ export const logoutUser = async (refreshToken: string) => {
 
   return true;
 };
+
+// VERIFY EMAIL TOKEN
+export const verifyEmailToken = async (rawToken: string) => {
+  const tokenHash = hashVerificationToken(rawToken.trim());
+
+  const storedToken = await findVerificationTokenByHash(tokenHash);
+
+  if (!storedToken) {
+    throw new Error("INVALID_TOKEN");
+  }
+
+  if (storedToken.expiresAt <= new Date()) {
+    throw new Error("TOKEN_EXPIRED");
+  }
+
+  const updatedUser = await verifyUserEmail(
+    storedToken.user.id,
+    storedToken.id
+  );
+
+  if (!updatedUser) {
+    throw new Error("INVALID_TOKEN");
+  }
+
+  return updatedUser;
+};
+
+// RESEND VERIFICATION EMAIL
+export const resendVerificationEmail = async (email: string) => {
+  const normalizedEmail = email.trim().toLowerCase();
+
+  const user = await findUserByEmail(normalizedEmail);
+
+  // Return generic response if user doesn't exist (prevent email enumeration)
+  if (!user) {
+    return { success: true };
+  }
+
+  // Do not generate token for already-verified account
+  if (user.emailVerifiedAt) {
+    return { success: true, alreadyVerified: true };
+  }
+
+  // Rate limiting check: minimum 60s between requests
+  const latestToken = await findLatestVerificationTokenByUserId(user.id);
+  if (
+    latestToken &&
+    Date.now() - latestToken.createdAt.getTime() < 60 * 1000
+  ) {
+    throw new Error("RATE_LIMITED");
+  }
+
+  // Invalidate previous unused verification tokens
+  await deleteVerificationTokensByUserId(user.id);
+
+  // Generate new token
+  const rawToken = generateVerificationToken();
+  const tokenHash = hashVerificationToken(rawToken);
+  const expiresAt = getVerificationTokenExpiry();
+
+  await createVerificationToken({
+    userId: user.id,
+    tokenHash,
+    expiresAt,
+  });
+
+  const baseUrl =
+    process.env.APP_URL || process.env.API_BASE_URL || "http://localhost:5000";
+  const verificationUrl = `${baseUrl}/api/auth/verify-email?token=${rawToken}`;
+
+  try {
+    await sendVerificationEmail({
+      to: user.email,
+      name: user.name,
+      verificationUrl,
+    });
+  } catch (emailError) {
+    console.error("Verification email sending failed during resend:", emailError);
+    throw new Error("EMAIL_SEND_FAILED");
+  }
+
+  return { success: true };
+};
+

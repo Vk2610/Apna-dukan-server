@@ -126,3 +126,83 @@ export const revokeRefreshToken = (tokenHash: string) => {
   });
 };
 
+// Store email verification token
+export const createVerificationToken = (input: {
+  userId: string;
+  tokenHash: string;
+  expiresAt: Date;
+}) => {
+  return prisma.emailVerificationToken.create({
+    data: {
+      userId: input.userId,
+      tokenHash: input.tokenHash,
+      expiresAt: input.expiresAt,
+    },
+  });
+};
+
+// Find verification token using its hash and include user
+export const findVerificationTokenByHash = (tokenHash: string) => {
+  return prisma.emailVerificationToken.findUnique({
+    where: { tokenHash },
+    include: {
+      user: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          emailVerifiedAt: true,
+        },
+      },
+    },
+  });
+};
+
+// Find latest token for a user (to check rate limiting)
+export const findLatestVerificationTokenByUserId = (userId: string) => {
+  return prisma.emailVerificationToken.findFirst({
+    where: { userId },
+    orderBy: { createdAt: "desc" },
+  });
+};
+
+// Invalidate / delete previous verification tokens for a user
+export const deleteVerificationTokensByUserId = (userId: string) => {
+  return prisma.emailVerificationToken.deleteMany({
+    where: { userId },
+  });
+};
+
+// Atomically mark user email verified and consume verification tokens
+export const verifyUserEmail = (userId: string, tokenId: string) => {
+  return prisma.$transaction(async (tx) => {
+    const token = await tx.emailVerificationToken.findUnique({
+      where: { id: tokenId },
+    });
+
+    if (!token || token.expiresAt <= new Date()) {
+      return null;
+    }
+
+    const updatedUser = await tx.user.update({
+      where: { id: userId },
+      data: {
+        emailVerifiedAt: new Date(),
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        emailVerifiedAt: true,
+      },
+    });
+
+    await tx.emailVerificationToken.deleteMany({
+      where: { userId },
+    });
+
+    return updatedUser;
+  });
+};
+
+

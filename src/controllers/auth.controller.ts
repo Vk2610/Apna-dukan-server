@@ -1,11 +1,10 @@
-
 import { Request, Response } from "express";
 import { z } from "zod";
-
 import {
   registerUser,
   loginUser,
   refreshAccessToken,
+  logoutUser,
 } from "../services/auth.services.js";
 
 // Registration validation
@@ -23,7 +22,7 @@ const loginSchema = z.object({
 
 // Refresh token validation
 const refreshSchema = z.object({
-  refreshToken: z.string().min(1),
+  refreshToken: z.string().trim().min(1),
 });
 
 // REGISTER CONTROLLER
@@ -146,3 +145,46 @@ export const refresh = async (req: Request, res: Response) => {
     });
   }
 };
+
+
+const logoutSchema = z.object({
+  refreshToken: z.string().trim().min(1),
+});
+
+export const logout = async (req: Request, res: Response) => {
+  const validation = logoutSchema.safeParse(req.body);
+
+  if (!validation.success) {
+    return res.status(400).json({
+      success: false,
+      message: "Refresh token is required.",
+    });
+  }
+
+  try {
+    await logoutUser(validation.data.refreshToken);
+
+    return res.status(200).json({
+      success: true,
+      message: "Logged out successfully.",
+    });
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message === "INVALID_REFRESH_TOKEN"
+    ) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid or already revoked refresh token.",
+      });
+    }
+
+    console.error("Logout error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Something went wrong during logout.",
+    });
+  }
+};
+

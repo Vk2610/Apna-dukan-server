@@ -1,4 +1,3 @@
-
 import argon2 from "argon2";
 import jwt from "jsonwebtoken";
 import { createHash, randomBytes } from "node:crypto";
@@ -9,6 +8,7 @@ import {
   createRefreshToken,
   findRefreshTokenByHash,
   rotateRefreshToken,
+  revokeRefreshToken,
 } from "../dao/auth.dao.js";
 
 // Registration input
@@ -180,4 +180,19 @@ export const refreshAccessToken = async (
     accessToken,
     refreshToken: newRefreshToken,
   };
+};
+
+
+export const logoutUser = async (refreshToken: string) => {
+  // Hash the refresh token received from the client
+  const tokenHash = hashRefreshToken(refreshToken.trim());
+
+  // Revoke the token in the database
+  const result = await revokeRefreshToken(tokenHash);
+
+  if (result.count === 0) {
+    throw new Error("INVALID_REFRESH_TOKEN");
+  }
+
+  return true;
 };

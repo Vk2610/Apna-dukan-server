@@ -112,3 +112,17 @@ export const rotateRefreshToken = async (
     return true;
   });
 };
+
+export const revokeRefreshToken = (tokenHash: string) => {
+  return prisma.refreshToken.updateMany({
+    where: {
+      tokenHash,
+      revokedAt: null,
+      expiresAt: { gt: new Date() },
+    },
+    data: {
+      revokedAt: new Date(),
+    },
+  });
+};
+

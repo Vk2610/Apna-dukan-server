@@ -131,8 +131,27 @@ export const registerUser = async (input: RegisterInput) => {
     emailSent = false;
   }
 
+  // Generate session tokens upon registration
+  const accessToken = generateAccessToken(user.id);
+  const refreshToken = generateRefreshToken();
+  const refreshTokenHash = hashRefreshToken(refreshToken);
+  const refreshExpiresAt = getRefreshTokenExpiry();
+
+  await createRefreshToken({
+    userId: user.id,
+    tokenHash: refreshTokenHash,
+    expiresAt: refreshExpiresAt,
+  });
+
   return {
-    user,
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      emailVerifiedAt: user.emailVerifiedAt,
+    },
+    accessToken,
+    refreshToken,
     emailSent,
   };
 };

@@ -6,14 +6,51 @@ import authRoutes from "./routes/auth.routes";
 
 const app = express();
 
-// Security middleware
-app.use(helmet());
+// Security middleware (allow inline scripts for web deep-link bridge)
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+  })
+);
 
 // Cross-origin resource sharing
 app.use(cors());
 
 // Parse incoming JSON requests
 app.use(express.json());
+
+// Apple App Site Association for iOS Universal Links
+app.get("/.well-known/apple-app-site-association", (req, res) => {
+  res.setHeader("Content-Type", "application/json");
+  res.status(200).json({
+    applinks: {
+      apps: [],
+      details: [
+        {
+          appID: "TEAMID.com.apnadukan.app",
+          paths: ["/auth/*", "/email-verified*"]
+        }
+      ]
+    }
+  });
+});
+
+// Digital Asset Links for Android App Links
+app.get("/.well-known/assetlinks.json", (req, res) => {
+  res.setHeader("Content-Type", "application/json");
+  res.status(200).json([
+    {
+      relation: ["delegate_permission/common.handle_all_urls"],
+      target: {
+        namespace: "android_app",
+        package_name: "com.apnadukan.app",
+        sha256_cert_fingerprints: [
+          "14:6D:E9:7C:0F:CD:CF:70:4E:86:11:6D:99:99:99:99:99:99:99:99:99:99:99:99:99:99:99:99:99:99:99:99"
+        ]
+      }
+    }
+  ]);
+});
 
 // Basic test route
 app.get("/", (req, res) => {

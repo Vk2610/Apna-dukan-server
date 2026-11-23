@@ -40,14 +40,18 @@ export const register = async (req: Request, res: Response) => {
   }
 
   try {
-    const { user, emailSent } = await registerUser(validation.data);
+    const result = await registerUser(validation.data);
 
     return res.status(201).json({
       success: true,
-      message: emailSent
+      message: result.emailSent
         ? "Account created successfully. Please check your email to verify your account."
         : "Account created, but we could not send the verification email. Please request a new verification email.",
-      data: user,
+      data: {
+        user: result.user,
+        accessToken: result.accessToken,
+        refreshToken: result.refreshToken,
+      },
     });
   } catch (error) {
     if (
@@ -241,8 +245,10 @@ export const verifyEmail = async (req: Request, res: Response) => {
 };
 
 // HTML Templates for Browser verification clicks
-const renderVerificationSuccessHtml = () => {
-  const deepLink = "apnadukan://auth/email-verified?status=success";
+const renderVerificationSuccessHtml = (
+  deepLink: string,
+  universalLink: string
+) => {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -286,9 +292,12 @@ const renderVerificationSuccessHtml = () => {
   </style>
   <script>
     window.onload = function() {
+      // 1. Try custom scheme first (opens Expo Go or standalone app)
+      window.location.href = "${deepLink}";
+      // 2. Also try universal link as fallback
       setTimeout(function() {
-        window.location.href = "${deepLink}";
-      }, 300);
+        window.location.href = "${universalLink}";
+      }, 350);
     };
   </script>
 </head>
@@ -298,14 +307,17 @@ const renderVerificationSuccessHtml = () => {
     <h1>Email Verified!</h1>
     <p>Your email address has been successfully verified. You can now continue in the ApnaDukan app.</p>
     <a href="${deepLink}" class="btn">Open ApnaDukan App</a>
-    <div class="footer">If the app did not open automatically, tap the button above.</div>
+    <div class="footer">If the app did not open automatically, tap the button above or install ApnaDukan to continue.</div>
   </div>
 </body>
 </html>`;
 };
 
-const renderVerificationErrorHtml = (errorMessage: string) => {
-  const fallbackLink = "apnadukan://auth/login";
+const renderVerificationErrorHtml = (
+  errorMessage: string,
+  deepLink: string,
+  universalLink: string
+) => {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -347,13 +359,18 @@ const renderVerificationErrorHtml = (errorMessage: string) => {
     .btn:hover { opacity: 0.9; }
     .footer { font-size: 12.5px; color: #8C968C; margin-top: 24px; line-height: 1.4; }
   </style>
+  <script>
+    window.onload = function() {
+      window.location.href = "${deepLink}";
+    };
+  </script>
 </head>
 <body>
   <div class="card">
     <div class="logo">✕</div>
     <h1>Link Expired or Invalid</h1>
     <p>${errorMessage}</p>
-    <a href="${fallbackLink}" class="btn">Open ApnaDukan App</a>
+    <a href="${deepLink}" class="btn">Open ApnaDukan App</a>
     <div class="footer">© 2025 ApnaDukan · Built for India's neighbourhood businesses</div>
   </div>
 </body>
@@ -364,25 +381,43 @@ const renderVerificationErrorHtml = (errorMessage: string) => {
 export const verifyEmailWeb = async (req: Request, res: Response) => {
   const token = typeof req.query.token === "string" ? req.query.token : undefined;
 
+  const appScheme = process.env.APP_DEEP_LINK_SCHEME || "apnadukan";
+  const appDomain = process.env.APP_UNIVERSAL_LINK_DOMAIN || "apnadukan.app";
+
   if (!token) {
+    const fallbackLink = `${appScheme}://auth/email-verified?status=error`;
+    const universalLink = `https://${appDomain}/auth/email-verified?status=error`;
     return res
       .status(400)
       .send(
         renderVerificationErrorHtml(
-          "Missing verification token. Please open the app or request a new verification email."
+          "Missing verification token. Please open the app or request a new verification email.",
+          fallbackLink,
+          universalLink
         )
       );
   }
 
   try {
     await verifyEmailToken(token);
-    return res.status(200).send(renderVerificationSuccessHtml());
+    const deepLink = `${appScheme}://auth/email-verified?status=success`;
+    const universalLink = `https://${appDomain}/auth/email-verified?status=success`;
+    return res
+      .status(200)
+      .send(renderVerificationSuccessHtml(deepLink, universalLink));
   } catch (error) {
-    const message =
-      error instanceof Error && error.message === "TOKEN_EXPIRED"
-        ? "This verification link has expired (links are valid for 15 minutes). Please log in to request a new one."
-        : "This verification link is invalid or has already been used. Please log in to continue.";
-    return res.status(400).send(renderVerificationErrorHtml(message));
+    const isExpired =
+      error instanceof Error && error.message === "TOKEN_EXPIRED";
+    const statusParam = isExpired ? "expired" : "invalid";
+    const message = isExpired
+      ? "This verification link has expired (links are valid for 15 minutes). Please log in to request a new one."
+      : "This verification link is invalid or your email has already been verified.";
+
+    const fallbackLink = `${appScheme}://auth/email-verified?status=${statusParam}`;
+    const universalLink = `https://${appDomain}/auth/email-verified?status=${statusParam}`;
+    return res
+      .status(400)
+      .send(renderVerificationErrorHtml(message, fallbackLink, universalLink));
   }
 };
 

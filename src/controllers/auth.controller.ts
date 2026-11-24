@@ -289,6 +289,7 @@ const renderVerificationSuccessHtml = (
     }
     .btn:hover { opacity: 0.9; }
     .footer { font-size: 12.5px; color: #8C968C; margin-top: 24px; line-height: 1.4; }
+    .opening { font-size: 13px; color: #416B52; margin: -16px 0 20px; }
   </style>
   <script>
     window.onload = function() {
@@ -306,6 +307,7 @@ const renderVerificationSuccessHtml = (
     <div class="logo">✓</div>
     <h1>Email Verified!</h1>
     <p>Your email address has been successfully verified. You can now continue in the ApnaDukan app.</p>
+    <div class="opening" role="status">Opening ApnaDukan…</div>
     <a href="${deepLink}" class="btn">Open ApnaDukan App</a>
     <div class="footer">If the app did not open automatically, tap the button above or install ApnaDukan to continue.</div>
   </div>

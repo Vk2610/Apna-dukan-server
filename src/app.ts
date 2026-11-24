@@ -3,6 +3,7 @@ import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import authRoutes from "./routes/auth.routes";
+import shopRoutes from "./routes/shop.routes.js";
 
 const app = express();
 
@@ -71,5 +72,8 @@ app.get("/health", (req, res) => {
 
 // Auth routes
 app.use("/api/auth", authRoutes);
+
+// Authenticated shop profile routes
+app.use("/api/shops", shopRoutes);
 
 export default app;

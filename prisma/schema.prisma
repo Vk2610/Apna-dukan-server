@@ -19,8 +19,26 @@ model User {
   identities   AuthIdentity[]
   emailVerificationTokens EmailVerificationToken[]
   refreshTokens RefreshToken[]
+  shop         Shop?
 
   @@map("users")
+}
+
+model Shop {
+  id              String   @id @default(uuid()) @db.Uuid
+  ownerUserId     String   @unique @map("owner_user_id") @db.Uuid
+  name            String
+  ownerName       String   @map("owner_name")
+  businessAddress String   @map("business_address")
+  mobileNumber    String   @map("mobile_number")
+  category        String
+  gstin           String?
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  owner User @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+
+  @@map("shops")
 }
 
 model AuthIdentity {
